@@ -1,9 +1,10 @@
-// apps/customer-app/src/components/customer/ChatPage.jsx
+﻿// apps/customer-app/src/components/customer/ChatPage.jsx
 import React, { useState, useRef, useEffect } from 'react';
 
-export default function ChatPage({ chats, onSendMessage, customerName }) {
+export default function ChatPage({ chats, onSendMessage, onTyping, isTyping, adminTyping, customerName }) {
   const [message, setMessage] = useState('');
   const messagesEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
   const [localChats, setLocalChats] = useState(chats);
 
   useEffect(() => {
@@ -21,7 +22,17 @@ export default function ChatPage({ chats, onSendMessage, customerName }) {
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter') handleSend();
+    if (e.key === 'Enter') {
+      handleSend();
+    } else {
+      if (onTyping) {
+        onTyping(true);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => {
+          onTyping(false);
+        }, 1000);
+      }
+    }
   };
 
   return (
@@ -54,6 +65,13 @@ export default function ChatPage({ chats, onSendMessage, customerName }) {
               </div>
             </div>
           ))}
+          {adminTyping && (
+            <div style={{ textAlign: 'left', marginBottom: '12px' }}>
+              <div style={{ display: 'inline-block', background: '#f1f5f9', padding: '8px 14px', borderRadius: '18px', color: '#64748b' }}>
+                Admin sedang mengetik...
+              </div>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>

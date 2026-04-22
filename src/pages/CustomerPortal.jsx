@@ -1,8 +1,9 @@
-// apps/customer-app/src/pages/CustomerPortal.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+﻿// apps/customer-app/src/pages/CustomerPortal.jsx
+import React, { useState, useEffect, useRef } from 'react';
 import { useCustomerAuth } from '../hooks/useCustomerAuth';
 import { useCustomerOrders } from '../hooks/useCustomerOrders';
 import { orderAPI } from '../services/api';
+import io from 'socket.io-client';
 import LoginForm from '../components/customer/LoginForm';
 import RegisterForm from '../components/customer/RegisterForm';
 import HomePage from '../components/customer/HomePage';
@@ -10,6 +11,10 @@ import OrderForm from '../components/customer/OrderForm';
 import TrackingPage from '../components/customer/TrackingPage';
 import HistoryPage from '../components/customer/HistoryPage';
 import ChatPage from '../components/customer/ChatPage';
+
+// Socket connection
+const SOCKET_URL = 'https://zippy-commitment.up.railway.app';
+let socket;
 
 export default function CustomerPortal() {
   const { customer, loading: authLoading, register, login, logout } = useCustomerAuth();
@@ -22,6 +27,9 @@ export default function CustomerPortal() {
   const [authError, setAuthError] = useState('');
   const [orderLoading, setOrderLoading] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
+  const [liveChats, setLiveChats] = useState(chats);
+  const [isTyping, setIsTyping] = useState(false);
+  const [adminTyping, setAdminTyping] = useState(false);
 
   useEffect(() => {
     if (customer) {
@@ -29,6 +37,40 @@ export default function CustomerPortal() {
       return () => clearInterval(interval);
     }
   }, [customer, loadOrders]);
+
+  // Socket.io connection
+  useEffect(() => {
+    if (customer && !socket) {
+      socket = io(SOCKET_URL);
+      
+      socket.emit('register', customer.id, 'customer');
+      
+      socket.on('new_message', (data) => {
+        setLiveChats(prev => [...prev, {
+          customerId: customer.id,
+          sender: 'admin',
+          message: data.message,
+          timestamp: new Date().toISOString()
+        }]);
+      });
+      
+      socket.on('admin_typing', (data) => {
+        setAdminTyping(data.isTyping);
+        setTimeout(() => setAdminTyping(false), 1000);
+      });
+    }
+    
+    return () => {
+      if (socket) {
+        socket.disconnect();
+        socket = null;
+      }
+    };
+  }, [customer]);
+
+  useEffect(() => {
+    setLiveChats(chats);
+  }, [chats]);
 
   const handleRegister = async (data) => {
     const result = await register(data);
@@ -52,6 +94,10 @@ export default function CustomerPortal() {
   const handleLogout = () => {
     logout();
     setCurrentPage('home');
+    if (socket) {
+      socket.disconnect();
+      socket = null;
+    }
   };
 
   const handleCreateOrder = async (formData) => {
@@ -110,6 +156,27 @@ export default function CustomerPortal() {
   const handleTrackOrder = async (resi) => {
     setTrackingResi(resi);
     setCurrentPage('tracking');
+  };
+
+  const handleSendChat = async (message) => {
+    await sendChat(message);
+    if (socket) {
+      socket.emit('send_message', {
+        customerId: customer.id,
+        message,
+        sender: 'customer'
+      });
+    }
+  };
+
+  const handleTyping = (isTypingNow) => {
+    if (socket) {
+      socket.emit('typing', {
+        customerId: customer.id,
+        isTyping: isTypingNow,
+        sender: 'customer'
+      });
+    }
   };
 
   const getTodayOrders = () => {
@@ -175,7 +242,16 @@ export default function CustomerPortal() {
       case 'history':
         return <HistoryPage orders={orders} />;
       case 'chat':
-        return <ChatPage chats={chats} onSendMessage={sendChat} customerName={customer.name} />;
+        return (
+          <ChatPage 
+            chats={liveChats} 
+            onSendMessage={handleSendChat}
+            onTyping={handleTyping}
+            isTyping={isTyping}
+            adminTyping={adminTyping}
+            customerName={customer.name}
+          />
+        );
       default:
         return null;
     }
